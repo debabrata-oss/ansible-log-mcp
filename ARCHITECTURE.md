@@ -70,17 +70,19 @@ flowchart TD
         HTTPCLIENT["HTTP/SSE MCP Client\n(Bearer token)"]
     end
 
-    subgraph Server["MCP Server"]
-        STDIO["ansible_mcp.py\n17 @mcp.tool() defs"]
-        AUTH["ansible_mcp_http.py\nPerUserApiKeyMiddleware\n+ DNS-rebind protection"]
-    end
-
-    CFG["config.yaml\nallowed_groups, forks,\ntimeouts, paths"]
+    AUTH{"PerUserApiKeyMiddleware\nconstant-time key match"}
+    REJECT["401 unauthorized"]
     USERS["users.yaml\napi_key -> name"]
 
+    STDIO["ansible_mcp.py\n17 @mcp.tool() defs"]
+    CFG["config.yaml\nallowed_groups, forks,\ntimeouts, paths"]
+    GATE{"_check_group()\ntarget_group in allowed_groups?"}
+    GATEREJECT["error: group not allowed"]
+
     subgraph Ansible["Ansible Layer"]
-        ADHOC["ad-hoc commands\n(_adhoc, 13 tools)"]
-        PLAYBOOKS["playbooks\nlogscan.yml / health_check.yml\n(2 tools)"]
+        ADHOC["11 ad-hoc SSH tools\n(_adhoc: ping / command / shell)"]
+        META["2 metadata-only tools\n(list_hosts, list_allowed_groups\n- no SSH)"]
+        PLAYBOOKS["2 playbook tools\nlogscan.yml / health_check.yml"]
         INV["hosts.ini\npatching_group / webservers /\ndb_servers / dev_test_hosts"]
     end
 
@@ -92,15 +94,19 @@ flowchart TD
     RCA["generate_rca_report\n.md + .html in /tmp"]
     MAIL["send_email_report\nResend API\n(+ optional attachment)"]
 
-    DESKTOP --> STDIO
+    DESKTOP -->|"no auth"| STDIO
     HTTPCLIENT --> AUTH
     AUTH -->|valid key| STDIO
-    AUTH -->|invalid/missing key| REJECT["401 unauthorized"]
+    AUTH -->|invalid/missing key| REJECT
     USERS -.-> AUTH
 
-    STDIO -->|_check_group| CFG
-    STDIO --> ADHOC
-    STDIO --> PLAYBOOKS
+    STDIO --> GATE
+    GATE -->|ok| ADHOC
+    GATE -->|ok| PLAYBOOKS
+    GATE -.->|"not in allowed_groups"| GATEREJECT
+    CFG -.-> GATE
+    META -.->|"reads inventory/config only"| STDIO
+
     ADHOC --> INV
     PLAYBOOKS --> INV
     INV --> TARGETS
@@ -112,8 +118,8 @@ flowchart TD
     OUT_ADHOC --> STDIO
     OUT_PLAYBOOK --> STDIO
 
-    STDIO --> RCA
-    RCA --> MAIL
+    STDIO -.->|optional| RCA
+    RCA -.-> MAIL
 
     STDIO --> DESKTOP
     STDIO --> AUTH
@@ -126,15 +132,19 @@ flowchart TD
     classDef targets fill:#fee2e2,stroke:#ef4444,color:#7f1d1d;
     classDef outputs fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95;
     classDef reject fill:#fecaca,stroke:#dc2626,color:#7f1d1d;
+    classDef auth fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95;
 
     class DESKTOP,HTTPCLIENT client;
-    class STDIO,AUTH server;
+    class STDIO server;
+    class AUTH auth;
     class CFG,USERS config;
-    class ADHOC,PLAYBOOKS,INV ansible;
+    class ADHOC,META,PLAYBOOKS,INV ansible;
     class TARGETS targets;
     class OUT_ADHOC,OUT_PLAYBOOK,RCA,MAIL outputs;
-    class REJECT reject;
+    class REJECT,GATEREJECT reject;
 ```
+
+Solid arrows are the required path; dashed arrows are optional (RCA/email) or rejection branches (invalid key, disallowed group).
 
 ## Request lifecycle (example: `scan_logs`)
 
