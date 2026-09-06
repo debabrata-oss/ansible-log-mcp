@@ -16,80 +16,35 @@ target hosts and back, including the optional RCA report + email path.
 
 ```mermaid
 flowchart TD
-    subgraph Client["Client"]
-        CD["Claude Desktop\n(stdio)"]
-        HC["HTTP/SSE MCP client\n(Bearer token)"]
-    end
+    CLIENT["Client\n(Claude Desktop or HTTP/SSE)"]
+    SERVER["MCP Server\nansible_mcp.py tools + auth gate"]
+    ANSIBLE["Ansible Layer\nplaybooks / ad-hoc + inventory"]
+    TARGETS["Target Hosts\n(parallel forks)"]
+    OUTPUTS["Outputs\ncombined report files"]
+    RCA["RCA Report\n(optional)"]
+    MAIL["Email via Resend\n(optional)"]
 
-    subgraph Server["MCP Server"]
-        AUTH["PerUserApiKeyMiddleware\n(users.yaml)"]
-        TOOLS["ansible_mcp.py tools\nscan_logs / ping_hosts / list_hosts /\ncheck_* / sar_report / full_health_check /\ncheck_pacemaker_cluster"]
-        GATE["_check_group()\nallowed_groups in config.yaml"]
-        RCA["generate_rca_report()"]
-        MAIL["send_email_report()\n(Resend API)"]
-    end
+    CLIENT --> SERVER
+    SERVER --> ANSIBLE
+    ANSIBLE --> TARGETS
+    TARGETS --> ANSIBLE
+    ANSIBLE --> OUTPUTS
+    OUTPUTS --> SERVER
+    SERVER --> RCA
+    RCA --> MAIL
+    SERVER --> CLIENT
 
-    subgraph Ansible["Ansible Layer"]
-        ADHOC["ansible ad-hoc\n(ping / command / shell modules)"]
-        PB1["ansible-playbook\nlogscan.yml"]
-        PB2["ansible-playbook\nhealth_check.yml"]
-        INV["playbooks/inventory/hosts.ini"]
-    end
+    classDef client fill:#dbeafe,stroke:#3b82f6,color:#1e3a8a;
+    classDef server fill:#dcfce7,stroke:#22c55e,color:#14532d;
+    classDef ansible fill:#fef9c3,stroke:#eab308,color:#713f12;
+    classDef targets fill:#fee2e2,stroke:#ef4444,color:#7f1d1d;
+    classDef outputs fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95;
 
-    subgraph Targets["Target Hosts (parallel forks)"]
-        H1["host 1"]
-        H2["host 2"]
-        H3["host N (...200+)"]
-    end
-
-    subgraph Outputs["Outputs"]
-        LOGF["/tmp/logscan_combined.txt"]
-        HCF["/tmp/healthcheck_combined.txt"]
-        RCAF["rca_*.md / rca_*.html"]
-    end
-
-    CD -->|stdio, direct tool calls| TOOLS
-    HC -->|"Bearer <key>"| AUTH -->|"authorized, scope=user"| TOOLS
-
-    TOOLS --> GATE
-    GATE -->|"group not allowed"| TOOLS
-    GATE -->|"group allowed"| ADHOC
-    GATE --> PB1
-    GATE --> PB2
-
-    ADHOC --> INV
-    PB1 --> INV
-    PB2 --> INV
-    INV --> H1
-    INV --> H2
-    INV --> H3
-
-    H1 -.->|"per-host result"| PB1
-    H2 -.-> PB1
-    H3 -.-> PB1
-    H1 -.-> PB2
-    H2 -.-> PB2
-    H3 -.-> PB2
-    H1 -.-> ADHOC
-    H2 -.-> ADHOC
-    H3 -.-> ADHOC
-
-    PB1 -->|"assemble"| LOGF
-    PB2 -->|"assemble"| HCF
-    LOGF --> TOOLS
-    HCF --> TOOLS
-    ADHOC -->|stdout/stderr| TOOLS
-
-    TOOLS -->|"evidence gathered"| RCA
-    RCA --> RCAF
-    RCA -->|"tool result"| TOOLS
-    RCAF -.->|"optional, attachment_path"| MAIL
-    TOOLS -->|"optional"| MAIL
-    MAIL -->|"HTTPS POST"| RESEND["Resend API"]
-
-    TOOLS -->|"formatted text result"| CD
-    TOOLS -->|"formatted text result"| AUTH
-    AUTH --> HC
+    class CLIENT client;
+    class SERVER server;
+    class ANSIBLE ansible;
+    class TARGETS targets;
+    class OUTPUTS,RCA,MAIL outputs;
 ```
 
 ## Request lifecycle (example: `scan_logs`)
