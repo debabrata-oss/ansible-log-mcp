@@ -1,0 +1,38 @@
+---
+- name: Fleet log scan
+  hosts: "{{ target_group | default('patching_group') }}"
+  gather_facts: false
+  vars:
+    log_path: "/var/log/messages"
+    search_pattern: "error|failed|critical"
+
+  tasks:
+    - name: Clean any stale per-host output from a previous run
+      file:
+        path: "/tmp/logscan_{{ inventory_hostname }}.txt"
+        state: absent
+      delegate_to: localhost
+      run_once: false
+      ignore_errors: true
+
+    - name: Grep pattern in target log file
+      shell: "grep -iE '{{ search_pattern }}' {{ log_path }} | tail -n 50"
+      register: grep_result
+      changed_when: false
+      failed_when: false
+
+    - name: Write per-host result file
+      copy:
+        content: |
+          === {{ inventory_hostname }} ===
+          {{ grep_result.stdout | default('(no matches)') }}
+        dest: "/tmp/logscan_{{ inventory_hostname }}.txt"
+      delegate_to: localhost
+
+    - name: Assemble combined report
+      assemble:
+        src: /tmp/
+        dest: /tmp/logscan_combined.txt
+        regexp: "^logscan_.*\\.txt$"
+      run_once: true
+      delegate_to: localhost

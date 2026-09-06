@@ -1,0 +1,8 @@
+---
+# Overrides for the patching_group inventory group.
+# Keep in sync with the group_vars already used on use1rhcans01 if this
+# repo is separate from your main patching controller repo.
+
+ansible_user: ec2-user
+ansible_ssh_private_key_file: ~/.ssh/id_ed25519
+ansible_become: true

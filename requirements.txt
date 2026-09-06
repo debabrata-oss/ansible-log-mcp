@@ -1,0 +1,7 @@
+mcp<2
+ansible-core>=2.16
+python-dotenv>=1.0.0
+pyyaml>=6.0
+pytest>=8.0.0
+uvicorn>=0.30.0
+starlette>=0.37.0

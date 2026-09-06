@@ -1,0 +1,5 @@
+users:
+  - name: alice
+    api_key: replace-with-a-long-random-string
+  - name: bob
+    api_key: replace-with-a-different-long-random-string

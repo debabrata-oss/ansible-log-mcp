@@ -1,0 +1,82 @@
+---
+- name: Full health check for RCA (single-connection version)
+  hosts: "{{ target_group | default('patching_group') }}"
+  gather_facts: false
+  vars:
+    log_path: "/var/log/messages"
+
+  tasks:
+    - name: Clean stale per-host report
+      file:
+        path: "/tmp/healthcheck_{{ inventory_hostname }}.txt"
+        state: absent
+      delegate_to: localhost
+      ignore_errors: true
+
+    # Everything below runs as ONE remote shell invocation instead of
+    # many separate tasks. On a high-latency link, each separate task
+    # costs a full SSH round trip (often several seconds) even with
+    # connection reuse — combining into one command keeps that to 1
+    # round trip regardless of how many checks are included.
+    - name: Gather full health snapshot in a single remote call
+      shell: |
+        echo "--- Uptime / Load ---"
+        uptime
+        echo
+        echo "--- Memory ---"
+        free -h
+        echo
+        echo "--- Disk ---"
+        df -h
+        echo
+        echo "--- Top snapshot ---"
+        top -bn1 | head -20
+        echo
+        echo "--- Top 10 CPU processes ---"
+        ps aux --sort=-%cpu | head -11
+        echo
+        echo "--- Top 10 Memory processes ---"
+        ps aux --sort=-%mem | head -11
+        echo
+        echo "--- Failed systemd units ---"
+        systemctl --failed --no-legend 2>/dev/null || echo "(none)"
+        echo
+        echo "--- Recent error/critical/fail log lines ({{ log_path }}) ---"
+        grep -iE 'error|critical|fail' {{ log_path }} 2>/dev/null | tail -30 || echo "(none)"
+        echo
+        echo "--- pacemaker.log (last 50 lines) ---"
+        sudo tail -n 50 /var/log/pacemaker/pacemaker.log 2>/dev/null \
+          || sudo journalctl -u pacemaker -n 50 --no-pager 2>/dev/null \
+          || echo "pacemaker.log not found and journalctl unit unavailable"
+        echo
+        echo "--- corosync.log (last 50 lines) ---"
+        sudo tail -n 50 /var/log/cluster/corosync.log 2>/dev/null \
+          || sudo journalctl -u corosync -n 50 --no-pager 2>/dev/null \
+          || echo "corosync.log not found and journalctl unit unavailable"
+        echo
+        echo "--- SAR: full historical snapshot for today ---"
+        for label_flag in 'CPU:-u' 'Memory:-r' 'Disk I/O:-b' 'Network:-n DEV' 'Load Average:-q'; do
+          label="${label_flag%%:*}"
+          flag="${label_flag#*:}"
+          echo "  -- SAR $label --"
+          sar $flag 2>/dev/null || echo "  sysstat not installed or no data available for today"
+          echo
+        done
+      register: snapshot
+      changed_when: false
+
+    - name: Write combined per-host report
+      copy:
+        content: |
+          ==================== {{ inventory_hostname }} ====================
+          {{ snapshot.stdout }}
+        dest: "/tmp/healthcheck_{{ inventory_hostname }}.txt"
+      delegate_to: localhost
+
+    - name: Assemble combined RCA report
+      assemble:
+        src: /tmp/
+        dest: /tmp/healthcheck_combined.txt
+        regexp: "^healthcheck_.*\\.txt$"
+      run_once: true
+      delegate_to: localhost

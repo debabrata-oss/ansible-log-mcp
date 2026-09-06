@@ -1,0 +1,26 @@
+# ansible-log-mcp configuration
+# Copy to config.local.yaml for machine-specific overrides (gitignored)
+
+allowed_groups:
+  - patching_group
+  - webservers
+  - db_servers
+  - dev_test_hosts
+
+playbook_dir: /home/debabrata/Downloads/ansible-log-mcp/playbooks
+playbook_file: logscan.yml
+health_playbook_file: health_check.yml
+inventory_path: /home/debabrata/Downloads/ansible-log-mcp/playbooks/inventory/hosts.ini
+
+defaults:
+  log_path: /var/log/messages
+  forks: 50
+  timeout_seconds: 300
+
+output:
+  tmp_dir: /tmp
+  combined_file: /tmp/logscan_combined.txt
+  health_combined_file: /tmp/healthcheck_combined.txt
+
+email:
+  from_address: onboarding@resend.dev

@@ -1,0 +1,8 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+/tmp/logscan_*.txt
+config.local.yaml
+*.retry
+users.yaml
